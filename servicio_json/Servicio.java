@@ -112,7 +112,7 @@ public class Servicio {
     Connection conexion = pool.getConnection();
     try {
       conexion.setAutoCommit(false);
-      String query = "SELECT nombre, descripcion, precio, foto FROM articulos WHERE nombre LIKE ? OR descripcion LIKE ?";
+      String query = "SELECT id, nombre, descripcion, precio, foto FROM articulos WHERE nombre LIKE ? OR descripcion LIKE ?";
       PreparedStatement statement = conexion.prepareStatement(query);
       statement.setString(1, "%" + busqueda + "%");
       statement.setString(2, "%" + busqueda + "%");
@@ -121,6 +121,7 @@ public class Servicio {
       List<Articulo> articulos = new ArrayList<>();
       while (rs.next()) {
         Articulo articulo = new Articulo();
+        articulo.id = rs.getInt("id");
         articulo.nombre = (rs.getString("nombre"));
         articulo.descripcion = (rs.getString("descripcion"));
         articulo.precio = (rs.getBigDecimal("precio"));
@@ -159,19 +160,17 @@ public class Servicio {
   @Produces(MediaType.APPLICATION_JSON)
   public Response compraArticulos(String json) throws Exception {
     ParamAgregarArticulo p = (ParamAgregarArticulo) j.fromJson(json, ParamAgregarArticulo.class);
-    String nombre = p.nombre;
-    String descripcion = p.descripcion;
+    int idArticulo = p.id;
     int cantidad = p.cantidad;
 
     Connection conexion = pool.getConnection();
     try {
       conexion.setAutoCommit(false);
 
-      // Buscar el artículo por nombre y descripción
-      String query = "SELECT id, cantidad FROM articulos WHERE nombre = ? AND descripcion = ?";
+      // Buscar el artículo por ID
+      String query = "SELECT cantidad FROM articulos WHERE id = ?";
       PreparedStatement statement = conexion.prepareStatement(query);
-      statement.setString(1, nombre);
-      statement.setString(2, descripcion);
+      statement.setInt(1, idArticulo);
       ResultSet rs = statement.executeQuery();
 
       // Si no se encuentra el artículo, regresar un mensaje de error
@@ -180,9 +179,7 @@ public class Servicio {
       }
 
       // Obtener la cantidad disponible del artículo en la base de datos
-      int idArticulo = rs.getInt("id");
       int cantidadEnBaseDatos = rs.getInt("cantidad");
-
       // Obtener la cantidad solicitada del artículo en el carrito de compras
       query = "SELECT cantidad FROM carrito_compra WHERE id_articulo = ?";
       statement = conexion.prepareStatement(query);
@@ -261,7 +258,7 @@ public class Servicio {
     try {
       conexion.setAutoCommit(false);
 
-      String query = "SELECT a.nombre, a.precio, a.foto, cc.cantidad "
+      String query = "SELECT a.id a.nombre, a.precio, a.foto, cc.cantidad "
           + "FROM articulos a "
           + "JOIN carrito_compra cc ON a.id = cc.id_articulo";
 
@@ -271,6 +268,7 @@ public class Servicio {
       List<ArticuloCarrito> articulosCarrito = new ArrayList<>();
       while (rs.next()) {
         ArticuloCarrito articuloCarrito = new ArticuloCarrito();
+        articuloCarrito.id = rs.getInt("id");
         articuloCarrito.nombre = rs.getString("nombre");
         articuloCarrito.precio = rs.getBigDecimal("precio");
         articuloCarrito.foto = rs.getBytes("foto");
@@ -304,17 +302,15 @@ public class Servicio {
   @Produces(MediaType.APPLICATION_JSON)
   public Response eliminarArticulo(String json) throws Exception {
     ParamEliminarArticulo p = (ParamEliminarArticulo) j.fromJson(json, ParamEliminarArticulo.class);
-    String nombre = p.nombre;
-    String descripcion = p.descripcion;
+    int id = p.id;
 
     Connection conexion = pool.getConnection();
     try {
       conexion.setAutoCommit(false);
       // Buscar el artículo en la tabla de artículos
-      String query = "SELECT id, cantidad FROM articulos WHERE nombre = ? AND descripcion = ?";
+      String query = "SELECT id, cantidad FROM articulos WHERE id = ?";
       PreparedStatement statement = conexion.prepareStatement(query);
-      statement.setString(1, nombre);
-      statement.setString(2, descripcion);
+      statement.setInt(1, id);
       ResultSet rs = statement.executeQuery();
 
       // Si no se encuentra el artículo, regresar un mensaje de error
@@ -327,7 +323,7 @@ public class Servicio {
 
       // Obtener el ID del artículo en la base de datos
       int idArticulo = rs.getInt("id");
-
+      
       // Buscar el artículo en la tabla de carrito_compra
       query = "SELECT cantidad FROM carrito_compra WHERE id_articulo = ?";
       statement = conexion.prepareStatement(query);
@@ -358,73 +354,6 @@ public class Servicio {
 
       conexion.commit();
       return Response.status(200).entity("Artículo eliminado del carrito de compras").build();
-
-    } catch (SQLException e) {
-      // Error en la transacción
-      try {
-        conexion.rollback();
-      } catch (SQLException e1) {
-        e1.printStackTrace();
-      }
-      String responseJson = "{\"message\": \"Error en la transacción: " + e.getMessage() + "\"}";
-      return Response.status(500).entity(responseJson).build();
-    } finally {
-      // Cerrar la conexión a la BD
-      try {
-        conexion.setAutoCommit(true);
-        conexion.close();
-      } catch (SQLException e) {
-        e.printStackTrace();
-      }
-    }
-  }
-
-  @POST
-  @Path("eliminar_articulos")
-  @Consumes(MediaType.APPLICATION_JSON)
-  @Produces(MediaType.APPLICATION_JSON)
-  public Response eliminarArticulos(String json) throws Exception {
-    ParamEliminarArticulos p = (ParamEliminarArticulos) j.fromJson(json, ParamEliminarArticulos.class);
-    List<Articulo> articulos = p.articulos;
-
-    Connection conexion = pool.getConnection();
-    try {
-      conexion.setAutoCommit(false);
-      for (Articulo articulo : articulos) {
-        String nombre = articulo.nombre;
-        String descripcion = articulo.descripcion;
-        // Buscar el articulo por nombre y descripcion
-        String query = "SELECT id FROM articulos WHERE nombre = ? AND descripcion = ?";
-        PreparedStatement statement = conexion.prepareStatement(query);
-        statement.setString(1, nombre);
-        statement.setString(2, descripcion);
-        ResultSet rs = statement.executeQuery();
-
-        // Si no se encuentra el articulo, regresar un mensaje de error
-        if (!rs.next()) {
-          return Response.status(404).entity(j.toJson(new Error("No se encontró el artículo solicitado"))).build();
-        }
-
-
-        // Obtener la cantidad del artículo en el carrito de compras
-        int cantidadEnCarrito = articulo.cantidad;
-
-        // Eliminar el articulo del carrito de compras
-        int idArticulo = rs.getInt("id");
-        query = "DELETE FROM carrito_compra WHERE id_articulo = ?";
-        statement = conexion.prepareStatement(query);
-        statement.setInt(1, idArticulo);
-        statement.executeUpdate();
-
-        // Regresar la cantidad del articulo eliminado a la tabla de articulos
-        query = "UPDATE articulos SET cantidad = cantidad + ? WHERE id = ?";
-        statement = conexion.prepareStatement(query);
-        statement.setInt(1, cantidadEnCarrito);
-        statement.setInt(2, idArticulo);
-        statement.executeUpdate();
-      }
-      conexion.commit();
-      return Response.status(200).entity("Artículos eliminados del carrito de compras").build();
 
     } catch (SQLException e) {
       // Error en la transacción
